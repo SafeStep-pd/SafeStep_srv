@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>YOLO AR Streamer</title>
+    <style>
+        body { background: #000; color: #fff; text-align: center; margin: 0; }
+        /* 映像を全画面表示にする */
+        video { width: 100%; height: 100vh; object-fit: cover; }
+        button { position: absolute; top: 20px; left: 20px; z-index: 100; padding: 15px; }
+    </style>
+</head>
+<body>
+    <button id="start">Start YOLO AR</button>
+    <video id="remoteVideo" autoplay playsinline></video>
+
+    <script>
+        const pc = new RTCPeerConnection();
+
+        // ★重要: PCから映像トラックが送られてきたら、それを画面に表示する
+        pc.ontrack = (event) => {
+            console.log("Received processed video from PC");
+            const remoteVideo = document.getElementById('remoteVideo');
+            if (remoteVideo.srcObject !== event.streams[0]) {
+                remoteVideo.srcObject = event.streams[0];
+            }
+        };
+
+        async function start() {
+            document.getElementById('start').style.display = 'none';
+
+            // 1. カメラを取得
+            const stream = await navigator.mediaDevices.getUserMedia({
+                video: { 
+                    facingMode: "environment",
+                    width: { ideal: 640 }, // 解像度を落とすと遅延が減ります
+                    height: { ideal: 480 }
+                },
+                audio: false
+            });
+
+            // 2. 映像をPCへ送信 (addTrack)
+            // 注意: ここで自分の画面には表示せず、PCに送るだけにする
+            stream.getTracks().forEach(track => pc.addTrack(track, stream));
+
+            // 3. WebRTC接続開始
+            const offer = await pc.createOffer();
+            await pc.setLocalDescription(offer);
+
+            const response = await fetch('/offer', {
+                body: JSON.stringify({
+                    sdp: pc.localDescription.sdp,
+                    type: pc.localDescription.type,
+                }),
+                headers: { 'Content-Type': 'application/json' },
+                method: 'POST'
+            });
+
+            const answer = await response.json();
+            await pc.setRemoteDescription(answer);
+        }
+
+        document.getElementById('start').addEventListener('click', start);
+    </script>
+</body>
+</html>
